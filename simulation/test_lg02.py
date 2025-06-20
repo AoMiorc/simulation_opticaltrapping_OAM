@@ -83,7 +83,7 @@ sim_box.animate_trajectory_3d(duration=5e-3, timestep=1e-7)  # 将 duration 从 
 # 修改二维光场可视化函数
 def plot_radial_intensity(x_grid, y_grid, field_func):
     # Get beam waist radius
-    w0 = 2e-6  # Same as in lg02_field function
+    w0 = optical_trap.w0  # Use the w0 from optical_trap instance
     
     # Create radial coordinates
     r = np.linspace(0, 3e-6, 300)  # 0 to 3 microns, 300 points
