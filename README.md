@@ -27,7 +27,7 @@ This is a Python project for simulating particle dynamics in optical traps. The 
 - **Configurable Parameters**: Customizable beam parameters, particle properties, and simulation conditions
 
 ## 项目结构 / Project Structure
-
+```
 Optical_image_python/
 ├── simulation/                    # 核心仿真模块 / Core simulation modules
 │   ├── box.py                    # 仿真盒子定义 / Simulation box definition
@@ -40,7 +40,7 @@ Optical_image_python/
 ├── test_lg01_two_particles.py     # LG01双粒子测试 / LG01 two particles test
 ├── test_lg61_single_particle.py   # LG61单粒子测试 / LG61 single particle test
 └── *.csv                          # 轨迹数据文件 / Trajectory data files
-
+```
 
 ## 安装要求 / Installation Requirements
 
