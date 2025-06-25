@@ -4,6 +4,10 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.animation as animation
 
+# 设置中文字体显示
+plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+plt.rcParams['axes.unicode_minus'] = False  # 解决负号显示问题
+
 class TrajectoryVisualizer:
     """从CSV文件读取多粒子轨迹数据并进行可视化的类 / Class for reading multi-particle trajectory data from CSV files and visualization"""
     
@@ -239,8 +243,11 @@ class TrajectoryVisualizer:
         axes[0].legend()
         
         axes[1].set_xlabel('时间 (s) / Time (s)')
-        axes[1].set_ylabel('扭矩大小 (N·m) / Torque Magnitude (N·m)')
+        axes[1].set_ylabel('扭矩大小 (pN·μm) / Torque Magnitude (pN·μm)')
         axes[1].set_title('扭矩大小 / Torque Magnitude')
+        
+        # ... 在绘图数据中添加单位转换
+        torque_magnitude = np.linalg.norm(trajectory['torque'], axis=1) * 1e18  # 转换为 pN·μm
         axes[1].grid(True, alpha=0.3)
         axes[1].legend()
         

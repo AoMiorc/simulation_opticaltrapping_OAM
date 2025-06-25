@@ -7,16 +7,19 @@ class SimulationBox:
     """三维模拟画布，整合粒子、光阱和环境
     3D simulation canvas that integrates particles, optical traps and environment"""
     
-    def __init__(self, particles=None, environment=None, optical_trap=None):
+    def __init__(self, particles=None, environment=None, optical_trap=None, timestep=1e-6):
         """初始化模拟盒子 / Initialize simulation box
         
         参数 / Parameters:
-            particles: 单个粒子对象或粒子对象列表 / Single particle object or list of particle objects
-            environment: 环境对象 / Environment object
-            optical_trap: 光阱对象 / Optical trap object
+            particles: 单个粒子对象或粒子对象列表
+            environment: 环境对象
+            optical_trap: 光阱对象
+            timestep: 时间步长 (s)，默认1μs
         """
         self.environment = environment
         self.optical_trap = optical_trap
+        self.timestep = timestep
+        self.time = 0.0
         
         if particles is None:
             self.particles = []
@@ -104,24 +107,50 @@ class SimulationBox:
             dy = particle.position[1] - rotation_center[1]
             r = np.sqrt(dx**2 + dy**2)
             
-            # 计算角加速度和角速度
-            I_axis = particle.moment_of_inertia + particle.mass * r**2  # 转动惯量计算
-            particle.angular_acceleration = optical_torque / I_axis
-            particle.angular_velocity += particle.angular_acceleration * self.timestep
-            
-            # 计算切向速度贡献
+            # 先用当前速度计算角速度（在速度更新之前）
             if r > 0:
                 # 切向单位向量
                 tangential_dir = np.array([-dy/r, dx/r, 0])
-                # 角加速度产生的切向加速度
-                tangential_acceleration = np.linalg.norm(particle.angular_acceleration) * r * tangential_dir
+                # 使用当前速度的切向分量计算角速度 ω = v_tangential / r
+                v_tangential = np.dot(particle.velocity, tangential_dir)
+                # 计算角速度大小
+                omega_magnitude = abs(v_tangential) / r
+                # 角速度方向：右手定则，沿z轴
+                omega_direction = 1 if v_tangential > 0 else -1
+                particle.angular_velocity = np.array([0, 0, omega_magnitude * omega_direction])
+            else:
+                # 在中心位置时角速度为零
+                particle.angular_velocity = np.array([0.0, 0.0, 0.0])
+            
+            # 计算角加速度
+            I_axis = particle.moment_of_inertia + particle.mass * r**2  # 转动惯量计算
+            particle.angular_acceleration = optical_torque / I_axis
+            
+            # 计算切向速度贡献（用于下一步的速度更新）
+            if r > 0:
+                # 切向单位向量
+                tangential_dir = np.array([-dy/r, dx/r, 0])
+                # 角加速度产生的切向加速度 - 修正：考虑角加速度方向
+                # 角加速度的z分量决定旋转方向
+                alpha_z = particle.angular_acceleration[2]  # 角加速度z分量
+                tangential_acceleration_magnitude = abs(alpha_z) * r
+                
+                # 根据角加速度方向确定切向加速度方向
+                if alpha_z >= 0:
+                    # 正角加速度：逆时针方向
+                    tangential_acceleration = tangential_acceleration_magnitude * tangential_dir
+                else:
+                    # 负角加速度：顺时针方向
+                    tangential_acceleration = tangential_acceleration_magnitude * (-tangential_dir)
+                
                 # 将切向加速度加入总速度
                 particle.velocity += tangential_acceleration * self.timestep
             
             # 位置更新
             particle.position += particle.velocity * self.timestep
             
-            total_force = optical_force - gamma * particle.velocity + fluctuation_force
+            # 修正：移除重复的阻尼项
+            total_force = optical_force + fluctuation_force  # 删除 - gamma * particle.velocity
             
             particle.acceleration = total_force / particle.mass
             
@@ -187,8 +216,8 @@ class SimulationBox:
         trajectories = self.get_trajectory()  # 获取所有粒子的轨迹数据
         
         with open(filename, 'w', encoding='utf-8', newline='') as f:
-            # 写入表头
-            f.write("Particle_ID,Time (s),X (m),Y (m),Z (m),Vx (m/s),Vy (m/s),Vz (m/s),Fx (N),Fy (N),Fz (N),ωx (rad/s),ωy (rad/s),ωz (rad/s),τx (N·m),τy (N·m),τz (N·m)\n")
+            # 写入表头 - 修改扭矩单位
+            f.write("Particle_ID,Time (s),X (m),Y (m),Z (m),Vx (m/s),Vy (m/s),Vz (m/s),Fx (N),Fy (N),Fz (N),ωx (rad/s),ωy (rad/s),ωz (rad/s),τx (pN·μm),τy (pN·μm),τz (pN·μm)\n")
             
             # 写入每个粒子的数据
             for particle_id, data in enumerate(trajectories):
@@ -200,4 +229,9 @@ class SimulationBox:
                     ωx, ωy, ωz = data['angular_velocity'][i]
                     τx, τy, τz = data['torque'][i]
                     
-                    f.write(f"{particle_id},{t:.6e},{x:.6e},{y:.6e},{z:.6e},{vx:.6e},{vy:.6e},{vz:.6e},{fx:.6e},{fy:.6e},{fz:.6e},{ωx:.6e},{ωy:.6e},{ωz:.6e},{τx:.6e},{τy:.6e},{τz:.6e}\n")
+                    # 转换扭矩单位：N⋅m → pN⋅μm (乘以 10^18)
+                    τx_pN_um = τx * 1e18
+                    τy_pN_um = τy * 1e18
+                    τz_pN_um = τz * 1e18
+                    
+                    f.write(f"{particle_id},{t:.6e},{x:.6e},{y:.6e},{z:.6e},{vx:.6e},{vy:.6e},{vz:.6e},{fx:.6e},{fy:.6e},{fz:.6e},{ωx:.6e},{ωy:.6e},{ωz:.6e},{τx_pN_um:.6e},{τy_pN_um:.6e},{τz_pN_um:.6e}\n")
