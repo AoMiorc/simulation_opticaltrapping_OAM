@@ -96,7 +96,7 @@ def test_lg01_two_particles():
         kappa=[1e-6, 1e-6, 1e-7],  # 阱刚度 [N/m] / Trap stiffness [N/m]
         center=np.array([0.0, 0.0, 0.0]),
         wavelength=1064e-9,  # 1064nm激光 / 1064nm laser
-        laser_power=0.15,  # 150mW (稍微增加功率以处理两个粒子) / 150mW (slightly increased power for two particles)
+        laser_power=15,  # 150mW (稍微增加功率以处理两个粒子) / 150mW (slightly increased power for two particles)
         w0=2e-6,  # 2μm束腰 / 2μm beam waist
         l=1  # LG01的轨道角动量量子数 / Orbital angular momentum quantum number for LG01
     )
@@ -120,8 +120,7 @@ def test_lg01_two_particles():
         return optical_trap.l * phi  # l=1的相位 / Phase for l=1
     
     # 设置光场 / Set optical field
-    optical_trap.set_field(x_range, y_range, z_range, 
-                          lg01_field_function, lg01_phase_function)
+    optical_trap.set_field(x_range, y_range, z_range, lg01_field_function, lg01_phase_function)
     print("LG01 field setup completed / LG01光场设置完成")
     
     # 5. 创建模拟盒子（传入粒子列表）/ Create simulation box (pass particle list)
@@ -132,7 +131,7 @@ def test_lg01_two_particles():
     )
     
     # 设置仿真参数 / Set simulation parameters
-    sim_box.timestep = 1e-6  # 1μs时间步长 / 1μs time step
+    sim_box.timestep = 1e-5  # 10μs时间步长 / 10μs time step
     sim_box.time = 0.0
     
     # 初始化阻尼系数（对每个粒子）/ Initialize damping coefficient (for each particle)
@@ -148,7 +147,7 @@ def test_lg01_two_particles():
     print("Starting simulation... / 开始模拟...")
     simulation_start_time = time.time()
     
-    duration = 0.015  # 15ms模拟时间（稍微增加以观察粒子相互作用）/ 15ms simulation time (slightly increased to observe particle interactions)
+    duration = 2.0  # 2000ms模拟时间（增大十倍）/ 2000ms simulation time (increased by 10x)
     trajectory = sim_box.simulate(duration)
     
     simulation_end_time = time.time()
@@ -172,15 +171,24 @@ def test_lg01_two_particles():
         mean_speed = np.mean(np.linalg.norm(traj['velocity'], axis=1))
         max_force = np.max(np.linalg.norm(traj['force'], axis=1))
         
+        # 检查角运动 / Check angular motion
+        max_angular_velocity = np.max(np.linalg.norm(traj['angular_velocity'], axis=1))
+        max_torque = np.max(np.linalg.norm(traj['torque'], axis=1))
+        
         print(f"\n--- Particle {i+1} / 粒子{i+1} ---")
         print(f"Final position / 最终位置: ({final_position[0]*1e6:.2f}, {final_position[1]*1e6:.2f}, {final_position[2]*1e6:.2f}) μm")
         print(f"Maximum displacement / 最大位移: {max_displacement*1e6:.2f} μm")
         print(f"Average velocity / 平均速度: {mean_speed*1e6:.2f} μm/s")
         print(f"Maximum force / 最大力: {max_force*1e12:.2f} pN")
+        print(f"Maximum angular velocity / 最大角速度: {max_angular_velocity:.2e} rad/s")
+        print(f"Maximum torque / 最大扭矩: {max_torque*1e18:.2f} pN·μm")
         
-        # 检查角运动 / Check angular motion
-        max_angular_velocity = np.max(np.linalg.norm(traj['angular_velocity'], axis=1))
-        max_torque = np.max(np.linalg.norm(traj['torque'], axis=1))
+        print(f"Particle {i+1} / 粒子 {i+1}:")
+        print(f"  Final position / 最终位置: ({final_position[0]*1e6:.2f}, {final_position[1]*1e6:.2f}, {final_position[2]*1e6:.2f}) μm")
+        print(f"  Maximum displacement / 最大位移: {max_displacement*1e6:.2f} μm")
+        print(f"  Average velocity / 平均速度: {mean_speed*1e6:.2f} μm/s")
+        print(f"  Maximum force / 最大受力: {max_force*1e12:.2f} pN")
+        print(f"  Maximum torque / 最大扭矩: {max_torque*1e18:.2f} pN·μm")
         print(f"Maximum angular velocity / 最大角速度: {max_angular_velocity:.2e} rad/s")
         print(f"Maximum torque / 最大扭矩: {max_torque*1e15:.2f} fN·m")
     

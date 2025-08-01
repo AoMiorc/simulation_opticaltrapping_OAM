@@ -123,7 +123,7 @@ def test_lg61_single_particle():
     )
     
     # 设置仿真参数 / Set simulation parameters
-    sim_box.timestep = 1e-6  # 1μs时间步长 / 1μs time step
+    sim_box.timestep = 1e-3  # 1μs时间步长 / 1μs time step
     sim_box.time = 0.0
     
     # 初始化阻尼系数 / Initialize damping coefficient
@@ -137,7 +137,7 @@ def test_lg61_single_particle():
     
     # 6. 运行模拟 / Run simulation
     print("Starting simulation... / 开始模拟...")
-    duration = 0.015  # 15ms模拟时间 / 15ms simulation time
+    duration = 15  # 15ms模拟时间 / 15ms simulation time
     trajectory = sim_box.simulate(duration)
     
     print(f"Simulation completed / 模拟完成, total time / 总时间: {duration*1000}ms")

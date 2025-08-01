@@ -345,6 +345,112 @@ class TrajectoryVisualizer:
             print(f"  最大速度 / Maximum velocity: {v_max:.2e} m/s")
             print(f"  最大力 / Maximum force: {f_max:.2e} N")
     
+    def plot_2d_trajectory_with_phase(self, plane='xy', figsize=(12, 10), particle_ids=None, 
+                                     optical_trap=None, field_alpha=0.6):
+        """绘制带有光场相位背景的2D轨迹图 / Plot 2D trajectory with optical field phase background
+        
+        Args:
+            plane: 投影平面 ('xy', 'xz', 'yz') / Projection plane ('xy', 'xz', 'yz')
+            figsize: 图形尺寸 / Figure size
+            particle_ids: 要绘制的粒子ID列表，None表示绘制所有粒子 / List of particle IDs to plot, None for all particles
+            optical_trap: 光阱对象，用于获取场相位 / OpticalTrap object for field phase
+            field_alpha: 背景场透明度 (0-1) / Background field transparency (0-1)
+        """
+        if not self.particles_data:
+            print("请先加载数据 / Please load data first")
+            return
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # 绘制光场相位背景 / Plot optical field phase background
+        if optical_trap is not None and hasattr(optical_trap, 'phase') and optical_trap.phase is not None:
+            self._plot_point_phase_background(ax, optical_trap, plane, field_alpha)
+        
+        # 确定要绘制的粒子 / Determine particles to plot
+        if particle_ids is None:
+            particle_ids = list(self.particles_data.keys())
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(particle_ids)))
+        
+        for i, particle_id in enumerate(particle_ids):
+            if particle_id not in self.particles_data:
+                continue
+                
+            data = self.particles_data[particle_id]
+            
+            if plane == 'xy':
+                ax.plot(data['X (m)'] * 1e6, data['Y (m)'] * 1e6, color=colors[i], 
+                       linewidth=2, label=f'粒子 {particle_id} / Particle {particle_id}', alpha=0.8)
+                ax.scatter(data['X (m)'].iloc[0] * 1e6, data['Y (m)'].iloc[0] * 1e6, 
+                          color=colors[i], s=100, marker='o', edgecolor='white', linewidth=2, zorder=10)
+                ax.scatter(data['X (m)'].iloc[-1] * 1e6, data['Y (m)'].iloc[-1] * 1e6, 
+                          color=colors[i], s=100, marker='s', edgecolor='white', linewidth=2, zorder=10)
+                ax.set_xlabel('X (μm)')
+                ax.set_ylabel('Y (μm)')
+                ax.set_title('粒子轨迹与光场相位 (XY平面) / Particle Trajectory with Optical Field Phase (XY Plane)')
+            elif plane == 'xz':
+                ax.plot(data['X (m)'] * 1e6, data['Z (m)'] * 1e6, color=colors[i], 
+                       linewidth=2, label=f'粒子 {particle_id} / Particle {particle_id}', alpha=0.8)
+                ax.scatter(data['X (m)'].iloc[0] * 1e6, data['Z (m)'].iloc[0] * 1e6, 
+                          color=colors[i], s=100, marker='o', edgecolor='white', linewidth=2, zorder=10)
+                ax.scatter(data['X (m)'].iloc[-1] * 1e6, data['Z (m)'].iloc[-1] * 1e6, 
+                          color=colors[i], s=100, marker='s', edgecolor='white', linewidth=2, zorder=10)
+                ax.set_xlabel('X (μm)')
+                ax.set_ylabel('Z (μm)')
+                ax.set_title('粒子轨迹与光场相位 (XZ平面) / Particle Trajectory with Optical Field Phase (XZ Plane)')
+            elif plane == 'yz':
+                ax.plot(data['Y (m)'] * 1e6, data['Z (m)'] * 1e6, color=colors[i], 
+                       linewidth=2, label=f'粒子 {particle_id} / Particle {particle_id}', alpha=0.8)
+                ax.scatter(data['Y (m)'].iloc[0] * 1e6, data['Z (m)'].iloc[0] * 1e6, 
+                          color=colors[i], s=100, marker='o', edgecolor='white', linewidth=2, zorder=10)
+                ax.scatter(data['Y (m)'].iloc[-1] * 1e6, data['Z (m)'].iloc[-1] * 1e6, 
+                          color=colors[i], s=100, marker='s', edgecolor='white', linewidth=2, zorder=10)
+                ax.set_xlabel('Y (μm)')
+                ax.set_ylabel('Z (μm)')
+                ax.set_title('粒子轨迹与光场相位 (YZ平面) / Particle Trajectory with Optical Field Phase (YZ Plane)')
+        
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+        
+        # 添加颜色条 / Add colorbar
+        if optical_trap is not None and hasattr(optical_trap, 'phase') and optical_trap.phase is not None and hasattr(ax, 'images') and len(ax.images) > 0:
+            cbar = plt.colorbar(ax.images[0], ax=ax, shrink=0.8)
+            cbar.set_label('相位 (rad) / Phase (rad)', rotation=270, labelpad=20)
+        
+        plt.tight_layout()
+        plt.show()
+
+    def _plot_point_phase_background(self, ax, optical_trap, plane, alpha):
+        """绘制点阵光场相位背景 / Plot point-wise optical field phase background"""
+        grid_x = optical_trap.grid_x * 1e6
+        grid_y = optical_trap.grid_y * 1e6
+        grid_z = optical_trap.grid_z * 1e6
+        phase = optical_trap.phase  # 使用相位数据
+        
+        if plane == 'xy':
+            z_center_idx = len(grid_z) // 2
+            phase_slice = phase[:, :, z_center_idx]
+            im = ax.imshow(phase_slice.T, extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()],
+                          origin='lower', cmap='hsv', alpha=alpha, aspect='equal', interpolation='bilinear')
+        elif plane == 'xz':
+            # 在y=0平面取切片 / Take slice at y=0 plane
+            y_center_idx = len(grid_y) // 2
+            phase_slice = phase[:, y_center_idx, :]
+            X, Z = np.meshgrid(grid_x, grid_z, indexing='ij')
+            
+            im = ax.imshow(phase_slice.T, extent=[grid_x.min(), grid_x.max(), grid_z.min(), grid_z.max()],
+                          origin='lower', cmap='hsv', alpha=alpha, aspect='equal', interpolation='bilinear')
+        elif plane == 'yz':
+            # 在x=0平面取切片 / Take slice at x=0 plane
+            x_center_idx = len(grid_x) // 2
+            phase_slice = phase[x_center_idx, :, :]
+            Y, Z = np.meshgrid(grid_y, grid_z, indexing='ij')
+            
+            im = ax.imshow(phase_slice.T, extent=[grid_y.min(), grid_y.max(), grid_z.min(), grid_z.max()],
+                          origin='lower', cmap='hsv', alpha=alpha, aspect='equal')
+        
+        return im
+
     def plot_2d_trajectory_with_field(self, plane='xy', figsize=(12, 10), particle_ids=None, 
                                      optical_trap=None, field_alpha=0.6, field_levels=20):
         """绘制带有光场强度背景的2D轨迹图 / Plot 2D trajectory with optical field intensity background
@@ -447,7 +553,6 @@ class TrajectoryVisualizer:
             # 在y=0平面取切片 / Take slice at y=0 plane
             y_center_idx = len(grid_y) // 2
             field_slice = field[:, y_center_idx, :]
-            X, Z = np.meshgrid(grid_x, grid_z, indexing='ij')
             
             contour = ax.contourf(X, Z, field_slice, levels=levels, 
                                  cmap='hot', alpha=alpha, zorder=1)
@@ -458,7 +563,6 @@ class TrajectoryVisualizer:
             # 在x=0平面取切片 / Take slice at x=0 plane
             x_center_idx = len(grid_x) // 2
             field_slice = field[x_center_idx, :, :]
-            Y, Z = np.meshgrid(grid_y, grid_z, indexing='ij')
             
             contour = ax.contourf(Y, Z, field_slice, levels=levels, 
                                  cmap='hot', alpha=alpha, zorder=1)
@@ -466,4 +570,117 @@ class TrajectoryVisualizer:
                       colors='white', alpha=0.3, linewidths=0.5, zorder=2)
         
         return contour
+
+    def plot_2d_trajectory_with_point_field(self, plane='xy', figsize=(12, 10), particle_ids=None,   # pyright: ignore[reportUnreachable]
+                                           optical_trap=None, field_alpha=0.6):
+        """绘制带有点阵光场强度背景的2D轨迹图 / Plot 2D trajectory with point-wise optical field intensity background
+        
+        Args:
+            plane: 投影平面 ('xy', 'xz', 'yz') / Projection plane ('xy', 'xz', 'yz')
+            figsize: 图形尺寸 / Figure size
+            particle_ids: 要绘制的粒子ID列表，None表示绘制所有粒子 / List of particle IDs to plot, None for all particles
+            optical_trap: 光阱对象，用于获取场强度 / OpticalTrap object for field intensity
+            field_alpha: 背景场透明度 (0-1) / Background field transparency (0-1)
+        """
+        if not self.particles_data:
+            print("请先加载数据 / Please load data first")
+            return
+        
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # 绘制光场强度背景 / Plot optical field intensity background
+        if optical_trap is not None and optical_trap.field is not None:
+            self._plot_point_field_background(ax, optical_trap, plane, field_alpha)
+        
+        # 确定要绘制的粒子 / Determine particles to plot
+        if particle_ids is None:
+            particle_ids = list(self.particles_data.keys())
+        
+        colors = plt.cm.tab10(np.linspace(0, 1, len(particle_ids)))
+        
+        for i, particle_id in enumerate(particle_ids):
+            if particle_id not in self.particles_data:
+                continue
+                
+            data = self.particles_data[particle_id]
+            
+            if plane == 'xy':
+                ax.plot(data['X (m)'] * 1e6, data['Y (m)'] * 1e6, color=colors[i], 
+                       linewidth=2, label=f'粒子 {particle_id} / Particle {particle_id}', alpha=0.8)
+                # 标记起点和终点 / Mark start and end points
+                ax.scatter(data['X (m)'].iloc[0] * 1e6, data['Y (m)'].iloc[0] * 1e6, 
+                          color=colors[i], s=100, marker='o', edgecolor='white', linewidth=2, zorder=10)
+                ax.scatter(data['X (m)'].iloc[-1] * 1e6, data['Y (m)'].iloc[-1] * 1e6, 
+                          color=colors[i], s=100, marker='s', edgecolor='white', linewidth=2, zorder=10)
+                ax.set_xlabel('X (μm)')
+                ax.set_ylabel('Y (μm)')
+                ax.set_title('粒子轨迹与点阵光场强度 (XY平面) / Particle Trajectory with Point-wise Optical Field Intensity (XY Plane)')
+            elif plane == 'xz':
+                ax.plot(data['X (m)'] * 1e6, data['Z (m)'] * 1e6, color=colors[i], 
+                       linewidth=2, label=f'粒子 {particle_id} / Particle {particle_id}', alpha=0.8)
+                ax.scatter(data['X (m)'].iloc[0] * 1e6, data['Z (m)'].iloc[0] * 1e6, 
+                          color=colors[i], s=100, marker='o', edgecolor='white', linewidth=2, zorder=10)
+                ax.scatter(data['X (m)'].iloc[-1] * 1e6, data['Z (m)'].iloc[-1] * 1e6, 
+                          color=colors[i], s=100, marker='s', edgecolor='white', linewidth=2, zorder=10)
+                ax.set_xlabel('X (μm)')
+                ax.set_ylabel('Z (μm)')
+                ax.set_title('粒子轨迹与点阵光场强度 (XZ平面) / Particle Trajectory with Point-wise Optical Field Intensity (XZ Plane)')
+            elif plane == 'yz':
+                ax.plot(data['Y (m)'] * 1e6, data['Z (m)'] * 1e6, color=colors[i], 
+                       linewidth=2, label=f'粒子 {particle_id} / Particle {particle_id}', alpha=0.8)
+                ax.scatter(data['Y (m)'].iloc[0] * 1e6, data['Z (m)'].iloc[0] * 1e6, 
+                          color=colors[i], s=100, marker='o', edgecolor='white', linewidth=2, zorder=10)
+                ax.scatter(data['Y (m)'].iloc[-1] * 1e6, data['Z (m)'].iloc[-1] * 1e6, 
+                          color=colors[i], s=100, marker='s', edgecolor='white', linewidth=2, zorder=10)
+                ax.set_xlabel('Y (μm)')
+                ax.set_ylabel('Z (μm)')
+                ax.set_title('粒子轨迹与点阵光场强度 (YZ平面) / Particle Trajectory with Point-wise Optical Field Intensity (YZ Plane)')
+        
+        ax.legend(loc='upper right')
+        ax.grid(True, alpha=0.3)
+        
+        # 添加颜色条 / Add colorbar
+        if optical_trap is not None and optical_trap.field is not None and hasattr(ax, 'images') and len(ax.images) > 0:
+            cbar = plt.colorbar(ax.images[0], ax=ax, shrink=0.8)
+            cbar.set_label('归一化强度 / Normalized Intensity', rotation=270, labelpad=20)
+        
+        plt.tight_layout()
+        plt.show()
+    
+    def _plot_point_field_background(self, ax, optical_trap, plane, alpha):
+        """绘制点阵光场强度背景 / Plot point-wise optical field intensity background"""
+        # 获取场网格和强度数据 / Get field grid and intensity data
+        grid_x = optical_trap.grid_x * 1e6  # 转换为微米 / Convert to micrometers
+        grid_y = optical_trap.grid_y * 1e6
+        grid_z = optical_trap.grid_z * 1e6
+        field = optical_trap.field
+        
+        if plane == 'xy':
+            # 在z=0平面取切片 / Take slice at z=0 plane
+            z_center_idx = len(grid_z) // 2
+            field_slice = field[:, :, z_center_idx]
+            
+            # 使用imshow直接绘制每个点的强度值，添加插值使其更平滑
+            im = ax.imshow(field_slice.T, extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()],
+                          origin='lower', cmap='hot', alpha=alpha, zorder=1, aspect='equal',
+                          interpolation='bilinear')  # 添加双线性插值
+            
+        elif plane == 'xz':
+            # 在y=0平面取切片 / Take slice at y=0 plane
+            y_center_idx = len(grid_y) // 2
+            field_slice = field[:, y_center_idx, :]
+            
+            im = ax.imshow(field_slice.T, extent=[grid_x.min(), grid_x.max(), grid_z.min(), grid_z.max()],
+                          origin='lower', cmap='hot', alpha=alpha, zorder=1, aspect='equal',
+                          interpolation='bilinear')  # 添加双线性插值
+            
+        elif plane == 'yz':
+            # 在x=0平面取切片 / Take slice at x=0 plane
+            x_center_idx = len(grid_x) // 2
+            field_slice = field[x_center_idx, :, :]
+            
+            im = ax.imshow(field_slice.T, extent=[grid_y.min(), grid_y.max(), grid_z.min(), grid_z.max()],
+                          origin='lower', cmap='hot', alpha=alpha, zorder=1, aspect='equal')
+        
+        return im
     

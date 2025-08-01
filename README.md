@@ -35,8 +35,6 @@ Optical_image_python/
 │   ├── particle.py               # 粒子类定义 / Particle class definition
 │   ├── trap.py                   # 光阱实现 / Optical trap implementation
 │   └── visualizer.py             # 可视化工具 / Visualization tools
-├── generate_lg61_beam.py          # LG61光束生成脚本 / LG61 beam generation script
-├── test_lg01_single_particle.py   # LG01单粒子测试 / LG01 single particle test
 ├── test_lg01_two_particles.py     # LG01双粒子测试 / LG01 two particles test
 ├── test_lg61_single_particle.py   # LG61单粒子测试 / LG61 single particle test
 └── *.csv                          # 轨迹数据文件 / Trajectory data files
@@ -141,6 +139,11 @@ conda install numpy matplotlib pandas scipy
   - 粒子运动方程求解
   - 多粒子相互作用处理
   - 轨迹数据记录和导出
+  - **时间步长动态调整**：支持手动和自动调整仿真时间步长
+    - `timestep` 属性：当前仿真时间步长 (默认1μs)
+    - `set_timestep()`: 手动设置时间步长
+    - `get_timestep()`: 获取当前时间步长
+    - `auto_adjust_timestep()`: 基于系统参数自动调整步长
 
 **English Functions:**
 - `SimulationBox` class: Main controller for simulation
@@ -148,6 +151,11 @@ conda install numpy matplotlib pandas scipy
   - Particle motion equation solving
   - Multi-particle interaction handling
   - Trajectory data recording and export
+  - **Dynamic Timestep Adjustment**: Support manual and automatic timestep adjustment
+    - `timestep` attribute: Current simulation timestep (default 1μs)
+    - `set_timestep()`: Manually set timestep
+    - `get_timestep()`: Get current timestep
+    - `auto_adjust_timestep()`: Auto-adjust timestep based on system parameters
 
 #### 5. visualizer.py - 可视化工具 / Visualization Tools
 **中文功能：**
@@ -168,21 +176,13 @@ conda install numpy matplotlib pandas scipy
 
 ## 测试脚本说明 / Test Scripts Documentation
 
-### 1. test_lg01_single_particle.py
-**中文：** LG01模式单粒子测试，演示涡旋光束中粒子的轨道运动
-**English:** LG01 mode single particle test, demonstrating particle orbital motion in vortex beams
-
-### 2. test_lg01_two_particles.py
+### 1. test_lg01_two_particles.py
 **中文：** LG01模式双粒子测试，研究粒子间相互作用和集体运动
 **English:** LG01 mode two-particle test, studying inter-particle interactions and collective motion
 
-### 3. test_lg61_single_particle.py
+### 2. test_lg61_single_particle.py
 **中文：** LG61模式单粒子测试，展示高阶LG模式的复杂光场效应
 **English:** LG61 mode single particle test, showcasing complex optical field effects of higher-order LG modes
-
-### 4. generate_lg61_beam.py
-**中文：** LG61光束生成工具，用于创建和可视化LG61模式的光场分布
-**English:** LG61 beam generation tool for creating and visualizing LG61 mode optical field distributions
 
 ## 使用指南 / Usage Guide
 
@@ -190,9 +190,6 @@ conda install numpy matplotlib pandas scipy
 
 #### 1. 运行预设仿真 / Run Preset Simulations
 ```python
-# 运行LG01单粒子测试 / Run LG01 single particle test
-python test_lg01_single_particle.py
-
 # 运行LG61单粒子测试 / Run LG61 single particle test
 python test_lg61_single_particle.py
 
@@ -278,8 +275,24 @@ from simulation.box import SimulationBox
 sim_box = SimulationBox(
     particles=particle,
     environment=water_env,
-    optical_trap=lg01_trap
+    optical_trap=lg01_trap,
+    timestep=1e-6  # 初始时间步长1μs / Initial timestep 1μs
 )
+
+# 手动调整时间步长 / Manual timestep adjustment
+sim_box.set_timestep(1e-7)  # 设置为0.1μs / Set to 0.1μs
+
+# 获取当前时间步长 / Get current timestep
+current_dt = sim_box.get_timestep()
+print(f"当前时间步长: {current_dt:.2e}s")
+print(f"Current timestep: {current_dt:.2e}s")
+
+# 自动调整时间步长 / Auto-adjust timestep
+# 可选精度级别: 'low', 'medium', 'high'
+# Optional accuracy levels: 'low', 'medium', 'high'
+sim_box.auto_adjust_timestep('high')  # 高精度模式 / High accuracy mode
+sim_box.auto_adjust_timestep('medium')  # 中等精度模式 / Medium accuracy mode
+sim_box.auto_adjust_timestep('low')  # 低精度模式 / Low accuracy mode
 
 # 运行仿真 / Run simulation
 duration = 0.01  # 10ms

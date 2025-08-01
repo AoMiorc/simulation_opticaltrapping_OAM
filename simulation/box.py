@@ -1,7 +1,5 @@
 import numpy as np
 from scipy.constants import Boltzmann as k_B
-import matplotlib.pyplot as plt
-from matplotlib import animation
 
 class SimulationBox:
     """三维模拟画布，整合粒子、光阱和环境
@@ -79,71 +77,46 @@ class SimulationBox:
             particle.velocity = (particle.velocity + velocity_increment) / damping_factor
             
             # 计算光学扭矩
+            # 计算光学扭矩
             optical_torque = self.optical_trap.calculate_torque_at_position(particle.position)
+            torque_z = optical_torque[2]  # 使用扭矩的 z 分量，包括符号
             
             # 确定旋转中心
             if self.optical_trap.axis_points is None or self.optical_trap.axis_direction is None:
                 self.optical_trap.calculate_angular_momentum_axis()
             
-            # 找到轴上的垂直投影点作为旋转中心
             if self.optical_trap.axis_points is not None and len(self.optical_trap.axis_points) > 1:
-                # 计算粒子到轴的垂直投影点
                 axis_start = self.optical_trap.axis_points[0]
                 axis_direction = self.optical_trap.axis_direction
-                
-                # 粒子相对于轴起点的向量
                 particle_vec = particle.position - axis_start
-                
-                # 计算在轴方向上的投影长度
                 projection_length = np.dot(particle_vec, axis_direction)
-                
-                # 计算投影点
                 rotation_center = axis_start + projection_length * axis_direction
             else:
                 rotation_center = self.optical_trap.center
             
-            # 计算到旋转中心的距离
             dx = particle.position[0] - rotation_center[0]
             dy = particle.position[1] - rotation_center[1]
             r = np.sqrt(dx**2 + dy**2)
             
-            # 先用当前速度计算角速度（在速度更新之前）
             if r > 0:
-                # 切向单位向量
                 tangential_dir = np.array([-dy/r, dx/r, 0])
-                # 使用当前速度的切向分量计算角速度 ω = v_tangential / r
                 v_tangential = np.dot(particle.velocity, tangential_dir)
-                # 计算角速度大小
                 omega_magnitude = abs(v_tangential) / r
-                # 角速度方向：右手定则，沿z轴
                 omega_direction = 1 if v_tangential > 0 else -1
                 particle.angular_velocity = np.array([0, 0, omega_magnitude * omega_direction])
             else:
-                # 在中心位置时角速度为零
                 particle.angular_velocity = np.array([0.0, 0.0, 0.0])
             
-            # 计算角加速度
-            I_axis = particle.moment_of_inertia + particle.mass * r**2  # 转动惯量计算
-            particle.angular_acceleration = optical_torque / I_axis
+            I_axis = particle.moment_of_inertia + particle.mass * r**2
+            alpha_z = torque_z / I_axis
+            particle.angular_acceleration = np.array([0, 0, alpha_z])
             
-            # 计算切向速度贡献（用于下一步的速度更新）
             if r > 0:
-                # 切向单位向量
-                tangential_dir = np.array([-dy/r, dx/r, 0])
-                # 角加速度产生的切向加速度 - 修正：考虑角加速度方向
-                # 角加速度的z分量决定旋转方向
-                alpha_z = particle.angular_acceleration[2]  # 角加速度z分量
                 tangential_acceleration_magnitude = abs(alpha_z) * r
-                
-                # 根据角加速度方向确定切向加速度方向
                 if alpha_z >= 0:
-                    # 正角加速度：逆时针方向
                     tangential_acceleration = tangential_acceleration_magnitude * tangential_dir
                 else:
-                    # 负角加速度：顺时针方向
                     tangential_acceleration = tangential_acceleration_magnitude * (-tangential_dir)
-                
-                # 将切向加速度加入总速度
                 particle.velocity += tangential_acceleration * self.timestep
             
             # 位置更新
@@ -171,8 +144,14 @@ class SimulationBox:
         else:
             return [particle.position for particle in self.particles]
     
-    def simulate(self, duration, save_interval=None):
-        """运行模拟 / Run simulation"""
+    def simulate(self, duration, save_interval=None, show_progress=True):
+        """运行模拟 / Run simulation
+        
+        参数 / Parameters:
+            duration: 模拟时长 / Simulation duration
+            save_interval: 保存间隔 / Save interval
+            show_progress: 是否显示进度条 / Whether to show progress bar
+        """
         num_steps = int(duration / self.timestep)
         # 重置历史记录 - 改为多粒子版本
         self.trajectory = [[] for _ in self.particles]  # 每个粒子一个轨迹列表
@@ -181,8 +160,25 @@ class SimulationBox:
         self.angular_trajectory = [[] for _ in self.particles]
         self.torque_history = [[] for _ in self.particles]
         
-        for _ in range(num_steps):
+        # 进度条设置
+        if show_progress:
+            print(f"开始模拟: {num_steps} 步, 时间步长: {self.timestep:.2e}s")
+            print(f"预计模拟时长: {duration}s")
+            progress_interval = max(1, num_steps // 100)  # 每1%更新一次
+        
+        for step in range(num_steps):
             self._step()
+            
+            # 显示进度
+            if show_progress and (step + 1) % progress_interval == 0:
+                progress = (step + 1) / num_steps * 100
+                bar_length = 50
+                filled_length = int(bar_length * (step + 1) // num_steps)
+                bar = '█' * filled_length + '-' * (bar_length - filled_length)
+                print(f'\r进度: |{bar}| {progress:.1f}% ({step + 1}/{num_steps} 步)', end='', flush=True)
+        
+        if show_progress:
+            print('\n模拟完成!')
         
         return self.get_trajectory()
     

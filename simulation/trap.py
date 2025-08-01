@@ -164,52 +164,35 @@ class OpticalTrap:
         return peak_positions
 
     def calculate_poynting_field(self):
-        """基于相位场计算坡印廷矢量 / Calculate Poynting vector based on phase field"""
+        """基于LG01光束正确计算坡印廷矢量"""
         if self.field is None or self.phase is None:
-            print("错误：光场或相位场未初始化，请先调用 set_field 方法设置光场和相位 / Error: Optical field or phase field not initialized, please call set_field method first")
+            print("错误：光场或相位场未初始化")
             return
-        
-        # 计算真空阻抗 / Calculate vacuum impedance
         Z0 = np.sqrt(mu_0 / epsilon_0)
-        
-        # 计算电场振幅 / Calculate electric field amplitude
-        E_amp = np.sqrt(2 * Z0 * self.field)
-        
-        # 使用复数表示电场 / Use complex representation for electric field
-        E_complex = E_amp * np.exp(1j * self.phase)
-        
-        # 假设电场主要在x方向，y方向分量由相位梯度决定 / Assume electric field mainly in x direction, y component determined by phase gradient
-        Ex = E_complex
-        
-        # 计算y方向电场分量（与相位梯度相关） / Calculate y-direction electric field component (related to phase gradient)
-        # 使用中心差分计算相位梯度 / Use central difference to calculate phase gradient
-        grad_phase_x = np.gradient(self.phase, axis=0, edge_order=2)
-        grad_phase_y = np.gradient(self.phase, axis=1, edge_order=2)
-        
-        # y方向电场分量与相位梯度成正比 / y-direction electric field component proportional to phase gradient
-        Ey = E_complex * (grad_phase_y + 1j * grad_phase_x)
-        
-        # z方向电场分量为0（假设主要在xy平面） / z-direction electric field component is 0 (assuming mainly in xy plane)
+        X, Y, Z = np.meshgrid(self.grid_x, self.grid_y, self.grid_z, indexing='ij')
+        r = np.sqrt((X - self.center[0])**2 + (Y - self.center[1])**2)
+        phi = np.arctan2(Y - self.center[1], X - self.center[0])
+        # LG01光束的电场幅值（假设归一化）
+        E0 = np.sqrt(2 * Z0 * self.field)
+        # LG01电场分量（角向偏振）
+        Ex = -E0 * np.sin(phi) * np.exp(1j * self.phase)
+        Ey = E0 * np.cos(phi) * np.exp(1j * self.phase)
         Ez = np.zeros_like(Ex)
-        
-        # 计算磁场（与电场垂直且满足真空中的关系） / Calculate magnetic field (perpendicular to electric field and satisfying vacuum relations)
-        Hx = -Ey / Z0
+        # 近轴近似下的磁场分量
         Hy = Ex / Z0
+        Hx = -Ey / Z0
         Hz = np.zeros_like(Ex)
-        
-        # 计算坡印廷矢量（取实部，因为我们关心的是时间平均的能流） / Calculate Poynting vector (take real part as we care about time-averaged energy flow)
+        # 坡印廷矢量
         Sx = np.real(Ey * np.conj(Hz) - Ez * np.conj(Hy))
         Sy = np.real(Ez * np.conj(Hx) - Ex * np.conj(Hz))
         Sz = np.real(Ex * np.conj(Hy) - Ey * np.conj(Hx))
-        
         self.poynting_field = np.stack([Sx, Sy, Sz], axis=-1)
-        
-        # 归一化到设定的激光功率 / Normalize to set laser power
+        # 归一化到设定的激光功率
         S_magnitude = np.sqrt(Sx**2 + Sy**2 + Sz**2)
         total_power = np.sum(S_magnitude) * (self.grid_x[1] - self.grid_x[0]) * \
                           (self.grid_y[1] - self.grid_y[0]) * (self.grid_z[1] - self.grid_z[0])
-        self.poynting_field *= self.laser_power / total_power
-    
+        if total_power > 0:
+            self.poynting_field *= self.laser_power / total_power
         return self.poynting_field
 
     def get_poynting_vector_at_position(self, position):
@@ -351,33 +334,43 @@ class OpticalTrap:
             return self.axis_points, self.axis_direction
 
     def calculate_torque_at_position(self, position, particle_radius=1e-6, refractive_index=1.5):
-        """改进的扭矩计算 / Improved torque calculation"""
-        # 获取角动量密度 / Get angular momentum density
-        L = self.get_angular_momentum_at_position(position)
+        """基于局部有效l值计算扭矩 / Calculate torque based on local effective l value"""
+        # 获取坡印廷矢量
+        S = self.get_poynting_vector_at_position(position)
         
-        # 计算散射截面（Rayleigh散射） / Calculate scattering cross-section (Rayleigh scattering)
+        # 计算相对于光束中心的位置矢量（在xy平面内）
+        r_vec = np.array(position) - np.array(self.center)
+        r_xy = np.array([r_vec[0], r_vec[1], 0])  # 只考虑xy平面的分量
+        
+        # 计算散射截面
         k = 2 * np.pi / self.wavelength
-        x = k * particle_radius  # 尺寸参数 / Size parameter
+        σ_sca = np.pi * particle_radius**2 * 0.1  # 几何截面 × 效率因子
         
-        if x < 0.1:  # Rayleigh散射区域 / Rayleigh scattering region
-            σ_sca = (8 * pi / 3) * (k**4) * (particle_radius**6) * \
-                    ((refractive_index**2 - 1) / (refractive_index**2 + 2))**2
-        else:
-            # 使用Mie散射或几何光学近似 / Use Mie scattering or geometric optics approximation
-            σ_sca = np.pi * particle_radius**2  # 简化为几何截面 / Simplified to geometric cross-section
+        # 计算基本扭矩
+        force_xy = σ_sca * np.array([S[0], S[1], 0]) / c
+        torque = np.cross(r_xy, force_xy)
         
-        # 计算角动量转移率 / Calculate angular momentum transfer rate
-        ω = 2 * np.pi * c / self.wavelength
-        L_magnitude = np.linalg.norm(L)
+        # **关键改进：使用局部有效l值并正确处理符号**
+        local_l = self.calculate_local_l_from_phase_gradient(position)
         
-        # 扭矩 = 角动量转移率 / Torque = angular momentum transfer rate
-        torque_magnitude = σ_sca * L_magnitude * c / ω
+        r_magnitude = np.linalg.norm(r_xy)
+        if r_magnitude > 0:
+            # 轨道角动量贡献的扭矩（z方向）
+            S_magnitude = np.linalg.norm(S)
+            
+            # **修正：扭矩大小与local_l成正比，保持符号**
+            # 不使用abs(local_l)，而是直接使用local_l来保持方向信息
+            orbital_torque_z = σ_sca * S_magnitude * r_magnitude * local_l / c
+            
+            # **重要：直接使用计算出的扭矩值，不再额外处理符号**
+            torque[2] += orbital_torque_z
         
-        # 扭矩方向沿角动量方向 / Torque direction along angular momentum direction
-        if L_magnitude > 0:
-            torque = torque_magnitude * L / L_magnitude
-        else:
-            torque = np.zeros(3)
+        # 添加放大因子
+        amplification_factor = 7e-14
+        torque *= amplification_factor
+        
+        # 添加调试打印
+        # print(f"Position: {position}, Local l: {local_l}, Torque: {torque}")
         
         return torque
 
@@ -407,3 +400,59 @@ class OpticalTrap:
         
         self.torque_field = np.stack([tau_x, tau_y, tau_z], axis=-1)
         return self.torque_field
+
+    def calculate_local_l_from_phase_gradient(self, position):
+        """根据相位梯度计算局部有效l值 / Calculate local effective l value from phase gradient"""
+        if self.phase is None:
+            return self.l  # 如果没有相位数据，返回默认l值
+        
+        # 找到最近的网格点
+        x_idx = np.searchsorted(self.grid_x, position[0])
+        y_idx = np.searchsorted(self.grid_y, position[1])
+        z_idx = np.searchsorted(self.grid_z, position[2])
+        
+        # 确保索引在有效范围内
+        x_idx = np.clip(x_idx, 1, len(self.grid_x)-2)  # 留出边界用于梯度计算
+        y_idx = np.clip(y_idx, 1, len(self.grid_y)-2)
+        z_idx = np.clip(z_idx, 0, len(self.grid_z)-1)
+        
+        # 计算相位梯度
+        dx = self.grid_x[1] - self.grid_x[0]
+        dy = self.grid_y[1] - self.grid_y[0]
+        
+        # 提取相位值并处理跳变
+        phase_x_minus = self.phase[x_idx-1, y_idx, z_idx]
+        phase_x_plus = self.phase[x_idx+1, y_idx, z_idx]
+        phase_y_minus = self.phase[x_idx, y_idx-1, z_idx]
+        phase_y_plus = self.phase[x_idx, y_idx+1, z_idx]
+
+# 处理相位跳变（unwrap局部相位差）
+        phase_diff_x = phase_x_plus - phase_x_minus
+        phase_diff_y = phase_y_plus - phase_y_minus
+
+# 将相位差调整到 [-π, π] 范围内
+        phase_diff_x = np.arctan2(np.sin(phase_diff_x), np.cos(phase_diff_x))
+        phase_diff_y = np.arctan2(np.sin(phase_diff_y), np.cos(phase_diff_y))
+
+# 计算梯度
+        dphase_dx = phase_diff_x / (2 * dx)
+        dphase_dy = phase_diff_y / (2 * dy)
+        # 计算到中心的距离和角度
+        r_vec = np.array(position) - np.array(self.center)
+        r = np.sqrt(r_vec[0]**2 + r_vec[1]**2)
+        
+        if r > 1e-10:  # 避免除零
+            # 计算角向梯度 ∇φ_θ = sin(θ) * ∂φ/∂x - cos(θ) * ∂φ/∂y  (翻转符号)
+            cos_theta = r_vec[0] / r
+            sin_theta = r_vec[1] / r
+            
+            angular_gradient = sin_theta * dphase_dx - cos_theta * dphase_dy
+            
+            # 局部有效l值 = r * ∇φ_θ
+            local_l = r * angular_gradient
+            
+            return local_l
+        else:
+            return self.l  # 在中心位置返回默认l值
+
+
