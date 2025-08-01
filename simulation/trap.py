@@ -366,7 +366,7 @@ class OpticalTrap:
             torque[2] += orbital_torque_z
         
         # 添加放大因子
-        amplification_factor = 7e-14
+        amplification_factor = 1e-15
         torque *= amplification_factor
         
         # 添加调试打印

@@ -152,7 +152,7 @@ def test_lp71_with_csv_field_ten_particles():
     
     for i in range(num_particles):
         particle = ParticleFactory.create_polystyrene_sphere(
-            radius=500e-9,
+            radius=50e-9,
             position=np.array([x_positions[i], 0.0, 0.0])  # 均匀分布的初始位置
         )
         particles.append(particle)
@@ -276,7 +276,7 @@ if __name__ == "__main__":
                 kappa=[2e-7, 2e-7, 1e-7],
                 center=np.array([0.0, 0.0, 0.0]),
                 wavelength=1064e-9,
-                laser_power=1.5,
+                laser_power=0.15,
                 w0=2.5e-6,
                 l=-6
             )

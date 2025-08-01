@@ -138,8 +138,8 @@ def test_lp71_with_csv_field_new():
     
     # 1. Create particle
     particle = ParticleFactory.create_polystyrene_sphere(
-        radius=500e-9,
-        position=np.array([3e-6,0.0, 0.0])  # Initial position
+        radius=50e-9,
+        position=np.array([2.5e-6,0.0, 0.0])  # Initial position
     )
     print(f"Created particle: radius={particle.radius*1e9:.1f}nm")
     
@@ -166,8 +166,8 @@ def test_lp71_with_csv_field_new():
     z_range = np.linspace(-3e-6, 3e-6, 150)  # 从30增加到150
     
     # 5. 加载CSV光场数据 - 使用新的强度和相位文件
-    intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_5cm.csv")
-    phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_5cm.csv")
+    intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_2cm.csv")
+    phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_2cm.csv")
     
     csv_intensity_function, csv_phase_function, intensity_data, phase_data = load_and_setup_csv_field(
         intensity_csv, phase_csv, x_range, y_range, z_range
@@ -202,7 +202,7 @@ def test_lp71_with_csv_field_new():
     
     # 8. 运行模拟
     print("Starting simulation...")
-    duration = 1  # 0.1 seconds
+    duration = 0.1  # 0.1 seconds
     trajectory = sim_box.simulate(duration)
     
     # 9. 保存结果
@@ -272,8 +272,8 @@ if __name__ == "__main__":
             y_range = np.linspace(-6e-6, 6e-6, 200)
             z_range = np.linspace(-3e-6, 3e-6, 100)
             
-            intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_5cm.csv")
-            phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_5cm.csv")
+            intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_2cm.csv")
+            phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_2cm.csv")
             
             csv_intensity_function, csv_phase_function, _, _ = load_and_setup_csv_field(
                 intensity_csv, phase_csv, x_range, y_range, z_range
