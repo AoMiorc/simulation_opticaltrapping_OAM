@@ -1,6 +1,5 @@
 import numpy as np
 import os
-from scipy.spatial import KDTree
 
 # 导入必要的模块
 import sys
@@ -82,73 +81,17 @@ def analyze_particle_motion(trajectory):
     
     return all_results
 
-def load_and_setup_csv_field(intensity_csv, phase_csv, x_range, y_range, z_range):
-    """
-    Load optical field intensity and phase data from CSV files and setup non-interpolation function (nearest neighbor search)
-    """
-    try:
-        # Load intensity and phase CSV data
-        intensity_data = np.loadtxt(intensity_csv, delimiter=',')
-        phase_data = np.loadtxt(phase_csv, delimiter=',')
-        print(f"Successfully loaded intensity data, shape: {intensity_data.shape}")
-        print(f"Successfully loaded phase data, shape: {phase_data.shape}")
-        
-        # Check if data shapes match
-        if intensity_data.shape != phase_data.shape:
-            print(f"Warning: Intensity and phase data shapes do not match!")
-            return None, None, None, None
-        
-        # 假设CSV数据是2D的分布（对应XY平面）
-        if len(intensity_data.shape) == 2:
-            ny, nx = intensity_data.shape
-            
-            # 创建对应的坐标网格
-            x_csv = np.linspace(x_range[0], x_range[-1], nx)
-            y_csv = np.linspace(y_range[0], y_range[-1], ny)
-            X, Y = np.meshgrid(x_csv, y_csv)
-            points = np.column_stack((X.ravel(), Y.ravel()))
-            
-            # 创建KDTree用于最近邻搜索
-            tree = KDTree(points)
-            
-            def csv_intensity_function(x, y, z):
-                """基于CSV数据的最近邻强度函数"""
-                points_query = np.column_stack((x.ravel(), y.ravel()))  # 忽略z for 2D data
-                dist, idx = tree.query(points_query)
-                result = intensity_data.ravel()[idx]
-                # 应用Z衰减
-                z_factor = np.exp(-(z.ravel()**2) / (2 * (1e-6)**2))
-                result *= z_factor
-                return result.reshape(x.shape)
-            
-            def csv_phase_function(x, y, z):
-                """基于CSV数据的最近邻相位函数"""
-                points_query = np.column_stack((x.ravel(), y.ravel()))
-                dist, idx = tree.query(points_query)
-                result = phase_data.ravel()[idx]
-                return result.reshape(x.shape)
-            
-            return csv_intensity_function, csv_phase_function, intensity_data, phase_data
-            
-        else:
-            print(f"Unsupported data format: {intensity_data.shape}")
-            return None, None, None, None
-            
-    except Exception as e:
-        print(f"Failed to load CSV files: {e}")
-        return None, None, None, None
-
 def test_lp71_with_csv_field_ten_particles():
-    """Test ten particles motion using new CSV optical field data"""
+    """Test ten particles motion using new CSV optical field data with new API"""
     
-    print("Starting LP71 new CSV optical field test with 10 particles...")
+    print("Starting LP71 new CSV optical field test with 10 particles (New API)...")
     
     # 1. Create 10 particles with uniformly distributed initial positions
     particles = []
     num_particles = 10
     
     # 生成在0到3e-6之间均匀分布的初始位置
-    x_positions = np.linspace(0, 3e-6, num_particles)
+    x_positions = np.linspace(0, 1.2e-6, num_particles)
     
     for i in range(num_particles):
         particle = ParticleFactory.create_polystyrene_sphere(
@@ -165,9 +108,8 @@ def test_lp71_with_csv_field_ten_particles():
         eta=0.001
     )
     
-    # 3. 创建光阱
+    # 3. 创建光阱 - 移除kappa参数
     optical_trap = OpticalTrap(
-        kappa=[2e-7, 2e-7, 1e-7],
         center=np.array([0.0, 0.0, 0.0]),
         wavelength=1064e-9,
         laser_power=1.5,
@@ -180,24 +122,20 @@ def test_lp71_with_csv_field_ten_particles():
     y_range = np.linspace(-6e-6, 6e-6, 300)  # 从60增加到300
     z_range = np.linspace(-3e-6, 3e-6, 150)  # 从30增加到150
     
-    # 5. 加载CSV光场数据 - 使用新的强度和相位文件
-    intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_2cm.csv")
-    phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_2cm.csv")
+    # 5. 使用新API直接设置CSV光场数据
+    intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_10cm_5times_smaller.csv")
+    phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_10cm_5times_smaller.csv")
     
-    csv_intensity_function, csv_phase_function, intensity_data, phase_data = load_and_setup_csv_field(
-        intensity_csv, phase_csv, x_range, y_range, z_range
-    )
+    # 使用新的setup_csv_field方法
+    success = optical_trap.setup_csv_field(intensity_csv, phase_csv, x_range, y_range, z_range)
     
-    if csv_intensity_function is None or csv_phase_function is None:
-        print("Unable to load CSV data, program exits")
+    if not success:
+        print("Unable to setup CSV optical field, program exits")
         return None, None
     
-    # 6. 设置光场
-    optical_trap.set_field(x_range, y_range, z_range, 
-                          csv_intensity_function, csv_phase_function)
-    print("New CSV optical field setup completed")
+    print("New CSV optical field setup completed using new API")
     
-    # 7. 创建模拟盒子
+    # 6. 创建模拟盒子
     sim_box = SimulationBox(
         particles=particles,  # 传入粒子列表
         environment=environment,
@@ -214,17 +152,17 @@ def test_lp71_with_csv_field_ten_particles():
         [gamma_single, gamma_single, gamma_single] for _ in range(num_particles)
     ])
     
-    # 8. 运行模拟
+    # 7. 运行模拟
     print("Starting simulation...")
     duration = 1  # 1 second
     trajectory = sim_box.simulate(duration)
     
-    # 9. 保存结果
+    # 8. 保存结果
     output_file = "particle_trajectory_lp71_csv_ten_particles.csv"
     sim_box.save_trajectory_to_csv(output_file)
     print(f"Trajectory data saved to: {output_file}")
     
-    # 10. 详细运动分析
+    # 9. 详细运动分析
     motion_analyses = analyze_particle_motion(trajectory)
     
     print("\n=== Simulation Results with New CSV Optical Field (10 Particles) ===")
@@ -271,9 +209,8 @@ if __name__ == "__main__":
             
             visualizer = TrajectoryVisualizer("particle_trajectory_lp71_csv_ten_particles.csv")
             
-            # 重新创建光阱用于可视化
+            # 重新创建光阱用于可视化 - 移除kappa参数
             optical_trap = OpticalTrap(
-                kappa=[2e-7, 2e-7, 1e-7],
                 center=np.array([0.0, 0.0, 0.0]),
                 wavelength=1064e-9,
                 laser_power=0.15,
@@ -281,22 +218,18 @@ if __name__ == "__main__":
                 l=-6
             )
             
-            # 重新设置CSV光场 - 使用高分辨率
+            # 重新设置CSV光场 - 使用新API
             x_range = np.linspace(-6e-6, 6e-6, 200)
             y_range = np.linspace(-6e-6, 6e-6, 200)
             z_range = np.linspace(-3e-6, 3e-6, 100)
             
-            intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_2cm.csv")
-            phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_2cm.csv")
+            intensity_csv = os.path.join(os.path.dirname(__file__), "final_intensity_LP71_m6_10cm_5times_smaller.csv")
+            phase_csv = os.path.join(os.path.dirname(__file__), "final_phase_LP71_m6_10cm_5times_smaller.csv")
             
-            csv_intensity_function, csv_phase_function, _, _ = load_and_setup_csv_field(
-                intensity_csv, phase_csv, x_range, y_range, z_range
-            )
+            # 使用新API设置光场
+            success = optical_trap.setup_csv_field(intensity_csv, phase_csv, x_range, y_range, z_range)
             
-            if csv_intensity_function is not None and csv_phase_function is not None:
-                optical_trap.set_field(x_range, y_range, z_range, 
-                                      csv_intensity_function, csv_phase_function)
-                
+            if success:
                 # 绘制所有粒子的轨迹
                 visualizer.plot_2d_trajectory_with_point_field('xy', 
                                                               optical_trap=optical_trap, 
