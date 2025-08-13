@@ -2,17 +2,16 @@ import numpy as np
 from scipy.constants import Boltzmann as k_B
 
 class SimulationBox:
-    """三维模拟画布，整合粒子、光阱和环境
-    3D simulation canvas that integrates particles, optical traps and environment"""
+    """3D simulation canvas that integrates particles, optical traps and environment"""
     
     def __init__(self, particles=None, environment=None, optical_trap=None, timestep=1e-6):
-        """初始化模拟盒子 / Initialize simulation box
+        """Initialize simulation box
         
-        参数 / Parameters:
-            particles: 单个粒子对象或粒子对象列表
-            environment: 环境对象
-            optical_trap: 光阱对象
-            timestep: 时间步长 (s)，默认1μs
+        Parameters:
+            particles: Single particle object or particle object list
+            environment: Environment Objects
+            optical_trap: Optical Trap Objects
+            timestep: Time step (s), default 1μs
         """
         self.environment = environment
         self.optical_trap = optical_trap
@@ -26,62 +25,47 @@ class SimulationBox:
         else:
             self.particles = [particles]
             
-    def update_damping(self):
-        """更新阻尼系数（如果环境参数变化）
-        Update damping coefficient (if environment parameters change)"""
-        self.gamma = np.array([
-            self.environment.get_drag_coefficient(self.particle),
-            self.environment.get_drag_coefficient(self.particle),
-            self.environment.get_drag_coefficient(self.particle)
-        ])
     
     def _step(self, particle_index=None):
-        """更新粒子状态（内部方法）/ Update particle state (internal method)
+        """Update particle state (internal method)
         
-        参数 / Parameters:
-            particle_index: 要更新的粒子索引，如果为None则更新所有粒子
-                          Index of particle to update, if None update all particles
+        Parameters:
+            particle_index: Index of particle to update, if None update all particles
         """
-        # 确定要更新的粒子
         if particle_index is None:
-            # 如果没有指定索引，更新所有粒子
             particles_to_update = self.particles
         else:
-            # 如果指定了索引，只更新该粒子
             if 0 <= particle_index < len(self.particles):
                 particles_to_update = [self.particles[particle_index]]
             else:
-                print(f"警告：粒子索引 {particle_index} 超出范围，将更新所有粒子")
                 print(f"Warning: Particle index {particle_index} out of range, updating all particles")
                 particles_to_update = self.particles
         
-        # 更新指定的粒子
         for particle in particles_to_update:
-            # 计算光学力
+            # Calculate optical force
             optical_force = self.optical_trap.get_force(particle.position)
             
-            # 计算当前粒子的阻尼系数
+            # Calculate current particle's damping coefficient
             gamma = self.environment.get_drag_coefficient(particle)
             
-            # 计算随机涨落力
+            # Calculate random fluctuation force
             variance = 2 * gamma * k_B * self.environment.T / self.timestep
             fluctuation_force = np.random.normal(0, np.sqrt(variance), 3)
             
-            # 使用半隐式欧拉方法处理阻尼
             # v_{n+1} = (v_n + (F_optical + F_random) * dt / m) / (1 + γ * dt / m)
             non_damping_force = optical_force + fluctuation_force
             
-            # 更新速度（半隐式处理阻尼）
+            # Update velocity (semi-implicit method)
             damping_factor = 1 + gamma * self.timestep / particle.mass
             velocity_increment = non_damping_force * self.timestep / particle.mass
             particle.velocity = (particle.velocity + velocity_increment) / damping_factor
             
-            # 计算光学扭矩
-            # 计算光学扭矩
-            optical_torque = self.optical_trap.calculate_torque_at_position(particle.position)
-            torque_z = optical_torque[2]  # 使用扭矩的 z 分量，包括符号
+
+            # Calculate optical torque
+            optical_torque = self.optical_trap.calculate_torque_at_position(particle.position, particle, self.environment)
+            torque_z = optical_torque[2] 
             
-            # 确定旋转中心
+            # Determine the rotation center
             if self.optical_trap.axis_points is None or self.optical_trap.axis_direction is None:
                 self.optical_trap.calculate_angular_momentum_axis()
             
@@ -119,18 +103,18 @@ class SimulationBox:
                     tangential_acceleration = tangential_acceleration_magnitude * (-tangential_dir)
                 particle.velocity += tangential_acceleration * self.timestep
             
-            # 位置更新
+            # Update position
             particle.position += particle.velocity * self.timestep
             
-            # 修正：移除重复的阻尼项
-            total_force = optical_force + fluctuation_force  # 删除 - gamma * particle.velocity
+            # Update total force
+            total_force = optical_force + fluctuation_force
             
             particle.acceleration = total_force / particle.mass
             
-            # 更新时间
+            # Update time
             self.time += self.timestep
             
-            # 记录轨迹和状态 - 修改为多粒子版本
+            # Record trajectory and state
             particle_idx = self.particles.index(particle)
             self.trajectory[particle_idx].append((self.time, particle.position.copy()))
             self.velocity_history[particle_idx].append(particle.velocity.copy())
@@ -138,53 +122,52 @@ class SimulationBox:
             self.angular_trajectory[particle_idx].append((self.time, particle.angular_velocity.copy()))
             self.torque_history[particle_idx].append(optical_torque.copy())
         
-        # 返回更新的粒子位置（如果只更新一个粒子则返回该粒子位置，否则返回所有粒子位置）
+        # Return updated particle positions
         if particle_index is not None and 0 <= particle_index < len(self.particles):
             return self.particles[particle_index].position
         else:
             return [particle.position for particle in self.particles]
     
-    def simulate(self, duration, save_interval=None, show_progress=True):
-        """运行模拟 / Run simulation
+    def simulate(self, duration, show_progress=True):
+        """Run simulation
         
-        参数 / Parameters:
-            duration: 模拟时长 / Simulation duration
-            save_interval: 保存间隔 / Save interval
-            show_progress: 是否显示进度条 / Whether to show progress bar
+        Parameters:
+            duration: Simulation duration
+            save_interval: Save interval
+            show_progress: Whether to show progress bar
         """
         num_steps = int(duration / self.timestep)
-        # 重置历史记录 - 改为多粒子版本
-        self.trajectory = [[] for _ in self.particles]  # 每个粒子一个轨迹列表
+        self.trajectory = [[] for _ in self.particles]
         self.velocity_history = [[] for _ in self.particles]
         self.force_history = [[] for _ in self.particles]
         self.angular_trajectory = [[] for _ in self.particles]
         self.torque_history = [[] for _ in self.particles]
         
-        # 进度条设置
+        # Progress bar setup
         if show_progress:
-            print(f"开始模拟: {num_steps} 步, 时间步长: {self.timestep:.2e}s")
-            print(f"预计模拟时长: {duration}s")
-            progress_interval = max(1, num_steps // 100)  # 每1%更新一次
+            print(f"Running simulation: {num_steps} steps, timestep: {self.timestep:.2e}s")
+            print(f"Expected duration: {duration}s")
+            progress_interval = max(1, num_steps // 100)
         
         for step in range(num_steps):
             self._step()
             
-            # 显示进度
+            # Show progress
             if show_progress and (step + 1) % progress_interval == 0:
                 progress = (step + 1) / num_steps * 100
                 bar_length = 50
                 filled_length = int(bar_length * (step + 1) // num_steps)
                 bar = '█' * filled_length + '-' * (bar_length - filled_length)
-                print(f'\r进度: |{bar}| {progress:.1f}% ({step + 1}/{num_steps} 步)', end='', flush=True)
+                print(f'\rProgress: |{bar}| {progress:.1f}% ({step + 1}/{num_steps} steps)', end='', flush=True)
         
         if show_progress:
-            print('\n模拟完成!')
+            print('\nSimulation completed!')
         
         return self.get_trajectory()
     
     
     def get_trajectory(self):
-        """获取所有粒子的轨迹数据 / Get trajectory data for all particles"""
+        """Get trajectory data for all particles"""
         trajectories = []
         
         for i, particle in enumerate(self.particles):
@@ -207,15 +190,14 @@ class SimulationBox:
         return trajectories
     
     def save_trajectory_to_csv(self, filename):
-        """将多粒子轨迹数据保存到CSV文件
-        Save multi-particle trajectory data to CSV file"""
-        trajectories = self.get_trajectory()  # 获取所有粒子的轨迹数据
+        """ Save multi-particle trajectory data to CSV file"""
+        trajectories = self.get_trajectory() 
         
         with open(filename, 'w', encoding='utf-8', newline='') as f:
-            # 写入表头 - 修改扭矩单位
+            # Write to the header
             f.write("Particle_ID,Time (s),X (m),Y (m),Z (m),Vx (m/s),Vy (m/s),Vz (m/s),Fx (N),Fy (N),Fz (N),ωx (rad/s),ωy (rad/s),ωz (rad/s),τx (pN·μm),τy (pN·μm),τz (pN·μm)\n")
             
-            # 写入每个粒子的数据
+
             for particle_id, data in enumerate(trajectories):
                 for i in range(len(data['time'])):
                     t = data['time'][i]
@@ -225,7 +207,7 @@ class SimulationBox:
                     ωx, ωy, ωz = data['angular_velocity'][i]
                     τx, τy, τz = data['torque'][i]
                     
-                    # 转换扭矩单位：N⋅m → pN⋅μm (乘以 10^18)
+                    # Convert torque unit: N⋅m → pN⋅μm (multiply by 10^18)
                     τx_pN_um = τx * 1e18
                     τy_pN_um = τy * 1e18
                     τz_pN_um = τz * 1e18
