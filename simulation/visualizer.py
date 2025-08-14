@@ -5,8 +5,6 @@ from tqdm import tqdm
 import matplotlib.animation as animation
 from matplotlib.colors import LogNorm
 
-
-# 设置中文字体显示
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False 
 
