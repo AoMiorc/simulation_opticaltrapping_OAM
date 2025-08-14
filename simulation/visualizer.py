@@ -1,6 +1,9 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+import matplotlib.animation as animation
+from matplotlib.colors import LogNorm
 
 
 # 设置中文字体显示
@@ -919,3 +922,248 @@ class TrajectoryVisualizer:
             print(f"Analysis/Visualization error: {e}")
             return None
     
+
+    def create_trajectory_video(self, output_filename='particle_trajectory_video.mp4', 
+                            fps=30, duration_sec=10, trail_length=50, 
+                            zoom_to_particle=True, optical_trap=None,
+                            plane='xy', figsize=(12, 10)):
+        """
+        Create particle track video with optical field background
+
+        
+        Args:
+            output_filename: Output video file name
+            fps: Frame rate
+            duration_sec: Video duration (seconds)
+            trail_length: Trail length
+            zoom_to_particle: Whether to zoom to particle motion range
+            optical_trap: OpticalTrap object, used to display optical field background
+            plane: Projection plane ('xy', 'xz', 'yz')
+            figsize: Figure size
+        """
+        if not self.particles_data:
+            print("Please load data first")
+            return None
+            
+        
+        print(f"Start generating video: {output_filename}")
+        
+        # Get the number and ID of particles
+        particle_ids = list(self.particles_data.keys())
+        num_particles = len(particle_ids)
+        
+        # Calculate the total number of frames
+        total_frames = fps * duration_sec
+        
+        # Find the maximum number of data points
+        max_data_points = max(len(self.particles_data[pid]) for pid in particle_ids)
+        data_points_per_frame = max(1, max_data_points // total_frames)
+        
+        # Create the figure
+        fig, ax = plt.subplots(figsize=figsize)
+        
+        # Draw the optical field background (if provided)
+        if optical_trap is not None and hasattr(optical_trap, 'field') and optical_trap.field is not None:
+            self._plot_field_background_for_video(ax, optical_trap, plane)
+        
+        # Set the axis labels
+        if plane == 'xy':
+            ax.set_xlabel('X Position (μm)', fontsize=12)
+            ax.set_ylabel('Y Position (μm)', fontsize=12)
+            title = f'Particle Motion in XY Plane ({num_particles} particles)'
+        elif plane == 'xz':
+            ax.set_xlabel('X Position (μm)', fontsize=12)
+            ax.set_ylabel('Z Position (μm)', fontsize=12)
+            title = f'Particle Motion in XZ Plane ({num_particles} particles)'
+        elif plane == 'yz':
+            ax.set_xlabel('Y Position (μm)', fontsize=12)
+            ax.set_ylabel('Z Position (μm)', fontsize=12)
+            title = f'Particle Motion in YZ Plane ({num_particles} particles)'
+        
+        ax.set_title(title, fontsize=14)
+        
+        # Define the colors
+        colors = plt.cm.tab10(np.linspace(0, 1, min(num_particles, 10)))
+        if num_particles > 10:
+            colors = plt.cm.tab20(np.linspace(0, 1, min(num_particles, 20)))
+        
+        # Initialize the trail lines and particle points
+        trail_lines = {}
+        particle_points = {}
+        
+        for i, pid in enumerate(particle_ids):
+            color = colors[i % len(colors)]
+            trail_lines[pid], = ax.plot([], [], color=color, linewidth=2, alpha=0.8, 
+                                    label=f'Particle {pid}')
+            particle_points[pid], = ax.plot([], [], 'o', color=color, markersize=8, 
+                                        markeredgecolor='white', markeredgewidth=2)
+        
+        # Add the time text
+        time_text = ax.text(0.02, 0.98, '', transform=ax.transAxes, 
+                        fontsize=12, verticalalignment='top',
+                        bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        # Add the particle count text
+        count_text = ax.text(0.02, 0.02, f'Particles: {num_particles}', 
+                            transform=ax.transAxes, fontsize=10, verticalalignment='bottom',
+                            bbox=dict(boxstyle='round', facecolor='yellow', alpha=0.7))
+        
+        # Add the legend
+        if num_particles <= 10:
+            ax.legend(loc='upper right', fontsize=8)
+        else:
+            ax.legend(loc='upper right', fontsize=6, ncol=2)
+        
+        # 设置坐标轴范围
+        all_data = pd.concat(self.particles_data.values())
+        
+        if plane == 'xy':
+            x_col, y_col = 'X (m)', 'Y (m)'
+        elif plane == 'xz':
+            x_col, y_col = 'X (m)', 'Z (m)'
+        elif plane == 'yz':
+            x_col, y_col = 'Y (m)', 'Z (m)'
+        
+        if zoom_to_particle:
+            x_margin = (all_data[x_col].max() - all_data[x_col].min()) * 1e6 * 0.2
+            y_margin = (all_data[y_col].max() - all_data[y_col].min()) * 1e6 * 0.2
+            
+            x_range = [all_data[x_col].min() * 1e6 - x_margin, 
+                    all_data[x_col].max() * 1e6 + x_margin]
+            y_range = [all_data[y_col].min() * 1e6 - y_margin, 
+                    all_data[y_col].max() * 1e6 + y_margin]
+        else:
+
+            if optical_trap is not None and hasattr(optical_trap, 'grid_x'):
+                x_range = [optical_trap.grid_x.min() * 1e6, optical_trap.grid_x.max() * 1e6]
+                y_range = [optical_trap.grid_y.min() * 1e6, optical_trap.grid_y.max() * 1e6]
+            else:
+                x_range = [-6, 6]
+                y_range = [-6, 6]
+        
+        ax.set_xlim(x_range)
+        ax.set_ylim(y_range)
+        
+        def animate(frame):
+            """Animation function for each frame"""
+            current_idx = min(frame * data_points_per_frame, max_data_points - 1)
+            
+            # Update each particle
+            for pid in particle_ids:
+                particle_data = self.particles_data[pid]
+                
+                if current_idx < len(particle_data):
+                    # Calculate the trail tail
+                    trail_start = max(0, current_idx - trail_length)
+                    
+                    # Get the trail data
+                    if plane == 'xy':
+                        x_trail = particle_data[x_col].iloc[trail_start:current_idx+1] * 1e6
+                        y_trail = particle_data[y_col].iloc[trail_start:current_idx+1] * 1e6
+                        x_current = particle_data[x_col].iloc[current_idx] * 1e6
+                        y_current = particle_data[y_col].iloc[current_idx] * 1e6
+                    elif plane == 'xz':
+                        x_trail = particle_data['X (m)'].iloc[trail_start:current_idx+1] * 1e6
+                        y_trail = particle_data['Z (m)'].iloc[trail_start:current_idx+1] * 1e6
+                        x_current = particle_data['X (m)'].iloc[current_idx] * 1e6
+                        y_current = particle_data['Z (m)'].iloc[current_idx] * 1e6
+                    elif plane == 'yz':
+                        x_trail = particle_data['Y (m)'].iloc[trail_start:current_idx+1] * 1e6
+                        y_trail = particle_data['Z (m)'].iloc[trail_start:current_idx+1] * 1e6
+                        x_current = particle_data['Y (m)'].iloc[current_idx] * 1e6
+                        y_current = particle_data['Z (m)'].iloc[current_idx] * 1e6
+                    
+                    # Update the trail line
+                    trail_lines[pid].set_data(x_trail, y_trail)
+                    
+                    # Update the particle position
+                    particle_points[pid].set_data([x_current], [y_current])
+                    
+                    # Update the time display (using the first particle's time)
+                    if pid == particle_ids[0]:
+                        current_time = particle_data['Time (s)'].iloc[current_idx]
+                        time_text.set_text(f'Time: {current_time:.4f} s\nFrame: {frame+1}/{total_frames}')
+                else:
+                    # If no more data, hide the particle
+                    trail_lines[pid].set_data([], [])
+                    particle_points[pid].set_data([], [])
+            
+            return list(trail_lines.values()) + list(particle_points.values()) + [time_text, count_text]
+        
+        # Create animation
+        print(f"Create animation, total frames: {total_frames}, data points per frame: {data_points_per_frame}")
+        anim = animation.FuncAnimation(fig, animate, frames=total_frames, 
+                                    interval=1000//fps, blit=True, repeat=True)
+        
+        # Save the video
+        print(f"Save video to: {output_filename}")  
+        try:
+            Writer = animation.writers['ffmpeg']
+            writer = Writer(fps=fps, metadata=dict(artist='ParticleTrajectoryVideo'), bitrate=1800)
+            
+            progress_bar = tqdm(total=total_frames, desc="Save video", unit="frame")
+            
+            def progress_callback(current_frame, total_frames):
+                progress_bar.update(1)
+            
+            anim.save(output_filename, writer=writer, progress_callback=progress_callback)
+            progress_bar.close()
+            print(f"Video saved successfully: {output_filename}")
+            
+        except Exception as e:
+            print(f"ffmpeg save failed: {e}")
+            try:
+                gif_filename = output_filename.replace('.mp4', '.gif')
+                progress_bar = tqdm(total=total_frames, desc="Save GIF", unit="frame")
+                
+                def progress_callback(current_frame, total_frames):
+                    progress_bar.update(1)
+                
+                anim.save(gif_filename, writer='pillow', fps=fps//2, progress_callback=progress_callback)
+                progress_bar.close()
+                print(f"GIF saved successfully: {gif_filename}")
+            except Exception as e2:
+                print(f"Save GIF failed: {e2}")
+        
+        plt.tight_layout()
+        plt.show()
+        
+        return anim
+
+    def _plot_field_background_for_video(self, ax, optical_trap, plane):
+        """Drawing light field background for video"""
+        if not hasattr(optical_trap, 'field') or optical_trap.field is None:
+            return
+        
+        grid_x = optical_trap.grid_x * 1e6
+        grid_y = optical_trap.grid_y * 1e6
+        grid_z = optical_trap.grid_z * 1e6
+        field = optical_trap.field
+        
+        if plane == 'xy':
+            z_center_idx = len(grid_z) // 2
+            field_slice = field[:, :, z_center_idx]
+            im = ax.imshow(field_slice.T, 
+                        extent=[grid_x.min(), grid_x.max(), grid_y.min(), grid_y.max()],
+                        origin='lower', cmap='hot', alpha=0.6,
+                        norm=LogNorm(vmin=np.max(field_slice)*1e-6, vmax=np.max(field_slice)))
+        elif plane == 'xz':
+            y_center_idx = len(grid_y) // 2
+            field_slice = field[:, y_center_idx, :]
+            im = ax.imshow(field_slice.T, 
+                        extent=[grid_x.min(), grid_x.max(), grid_z.min(), grid_z.max()],
+                        origin='lower', cmap='hot', alpha=0.6,
+                        norm=LogNorm(vmin=np.max(field_slice)*1e-6, vmax=np.max(field_slice)))
+        elif plane == 'yz':
+            x_center_idx = len(grid_x) // 2
+            field_slice = field[x_center_idx, :, :]
+            im = ax.imshow(field_slice.T, 
+                        extent=[grid_y.min(), grid_y.max(), grid_z.min(), grid_z.max()],
+                        origin='lower', cmap='hot', alpha=0.6,
+                        norm=LogNorm(vmin=np.max(field_slice)*1e-6, vmax=np.max(field_slice)))
+        
+        # Add color bars
+        cbar = plt.colorbar(im, ax=ax, shrink=0.8)
+        cbar.set_label('Field Intensity (relative units)', fontsize=12)
+        
+        return im
