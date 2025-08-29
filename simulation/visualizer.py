@@ -5,6 +5,8 @@ from tqdm import tqdm
 import matplotlib.animation as animation
 from matplotlib.colors import LogNorm
 
+
+# 设置中文字体显示
 plt.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 plt.rcParams['axes.unicode_minus'] = False 
 
@@ -419,6 +421,15 @@ class TrajectoryVisualizer:
             v_max = np.sqrt(data['Vx (m/s)']**2 + data['Vy (m/s)']**2 + data['Vz (m/s)']**2).max()
             f_max = np.sqrt(data['Fx (N)']**2 + data['Fy (N)']**2 + data['Fz (N)']**2).max()
             
+            if all(col in data.columns for col in ['τx (pN·μm)', 'τy (pN·μm)', 'τz (pN·μm)']):
+                tau_max = np.sqrt(
+                    data['τx (pN·μm)']**2 +
+                    data['τy (pN·μm)']**2 +
+                    data['τz (pN·μm)']**2
+                ).max()
+            else:
+                tau_max = np.nan
+
             # Print statistics
             print(f"  Average speed: {avg_speed:.2e} m/s")
             print(f"  Maximum velocity: {v_max:.2e} m/s")
