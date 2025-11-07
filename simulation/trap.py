@@ -448,7 +448,7 @@ class OpticalTrap:
 
         torque[2] += torque_oam_z
 
-        return torque*1e-13
+        return torque
 
 
 
