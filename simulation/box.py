@@ -43,7 +43,11 @@ class SimulationBox:
         
         for particle in particles_to_update:
             # Calculate optical force
-            optical_force = self.optical_trap.get_force(particle.position)
+            optical_force = self.optical_trap.get_force(
+                particle.position,
+                particle_radius=particle.radius,
+                refractive_index=particle.refractive_index,
+            )
             
             # Calculate current particle's damping coefficient
             gamma = self.environment.get_drag_coefficient(particle)
